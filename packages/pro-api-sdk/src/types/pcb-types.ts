@@ -14,6 +14,8 @@ export interface ComponentInfo {
 	x: number;
 	y: number;
 	rotation: number;
+	width?: number;   // 可选：并非所有元器件类型都有 getState_Width() 方法
+	height?: number;  // 可选：并非所有元器件类型都有 getState_Height() 方法
 }
 
 /**

@@ -156,7 +156,7 @@ export class ComponentQueryAdapter extends BasePCBAdapter {
 
 	async findComponentByDesignator(params: { designator: string }): Promise<{
 		success: boolean;
-		component?: ComponentInfo;
+		component?: ComponentInfo & { width?: number; height?: number };
 		error?: string;
 	}> {
 		try {
@@ -164,6 +164,15 @@ export class ComponentQueryAdapter extends BasePCBAdapter {
 
 			const target = await this.findComponentByDesignatorInternal(params.designator);
 			this.logger.log(`Found component ${params.designator}`);
+
+			// 检查 getState_Width 和 getState_Height 方法是否存在
+			// 因为并非所有元器件类型都有这两个方法
+			const width = typeof target.getState_Width === 'function'
+				? target.getState_Width()
+				: undefined;
+			const height = typeof target.getState_Height === 'function'
+				? target.getState_Height()
+				: undefined;
 
 			return {
 				success: true,
@@ -174,6 +183,8 @@ export class ComponentQueryAdapter extends BasePCBAdapter {
 					x: target.getState_X(),
 					y: target.getState_Y(),
 					rotation: target.getState_Rotation(),
+					...(width !== undefined && { width }),
+					...(height !== undefined && { height }),
 				},
 			};
 		} catch (error) {

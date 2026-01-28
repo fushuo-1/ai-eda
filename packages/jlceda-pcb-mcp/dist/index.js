@@ -298,13 +298,19 @@ server.registerTool('pcb_find_component_by_designator', {
     },
 }, (args) => executeTool('pcb.find_component_by_designator', args, (result) => {
     const c = result.component;
-    const markdown = `✅ Found Component: **${c.designator}**\n\n` +
+    let markdown = `✅ Found Component: **${c.designator}**\n\n` +
         `- Primitive ID: ${c.primitiveId}\n` +
         `- Layer: Layer ${c.layer} (${c.layer === 1 ? 'TOP' : c.layer === 2 ? 'BOTTOM' : 'Other'})\n` +
         `- Position: (${c.x.toFixed(2)}, ${c.y.toFixed(2)}) mil\n` +
-        `- Rotation: ${c.rotation}°\n` +
-        `- Size (original): ${c.width.toFixed(1)} x ${c.height.toFixed(1)} mil\n` +
-        `  (${(c.width * 0.0254).toFixed(2)} x ${(c.height * 0.0254).toFixed(2)} mm)\n`;
+        `- Rotation: ${c.rotation}°\n`;
+    // 仅当 width 和 height 存在时才显示尺寸信息
+    if (c.width !== undefined && c.height !== undefined) {
+        markdown += `- Size (original): ${c.width.toFixed(1)} x ${c.height.toFixed(1)} mil\n` +
+            `  (${(c.width * 0.0254).toFixed(2)} x ${(c.height * 0.0254).toFixed(2)} mm)\n`;
+    }
+    else {
+        markdown += `- Size (original): N/A (封装尺寸信息不可用)\n`;
+    }
     return {
         markdown,
         structured: {
