@@ -19,27 +19,7 @@ AI 辅助 EDA 工具包，通过 MCP 实现 Claude AI 与嘉立创EDA Pro 的深
 
 - 嘉立创EDA Pro 扩展 API (全局 `eda` 对象)
 
-## 项目结构
-
-```
-packages/
-├── jlceda-pcb-mcp/          # MCP 服务器
-│   ├── src/
-│   │   ├── index.ts         # MCP 工具注册
-│   │   ├── server.ts        # WebSocket 服务器
-│   │   ├── ws-server.ts     # WebSocket 消息处理
-│   │   └── types/           # 协议类型定义
-│   └── dist/                # 编译输出
-│
-├── pro-api-sdk/             # 浏览器扩展
-│   ├── src/
-│   │   ├── index.ts         # 扩展入口
-│   │   ├── websocket-client.ts  # WebSocket 客户端
-│   │   ├── sch-api-adapter.ts   # 原理图 API 适配器
-│   │   └── protocol.ts      # 协议类型定义
-│   └── dist/
-│       └── pro-api-sdk_v1.0.0.eext
-```
+## 项目结构packages/
 
 **文件命名规范**
 
