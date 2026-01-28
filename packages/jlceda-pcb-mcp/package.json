@@ -1,0 +1,43 @@
+{
+  "name": "jlceda-pcb-mcp-server",
+  "version": "0.2.0",
+  "description": "MCP server for JLCEDA Pro PCB operations via WebSocket bridge",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "jlceda-pcb-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "test": "echo \"Tests not implemented yet\""
+  },
+  "keywords": [
+    "mcp",
+    "jlceda",
+    "easyeda",
+    "pcb",
+    "eda",
+    "schematic",
+    "circuit"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.12",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

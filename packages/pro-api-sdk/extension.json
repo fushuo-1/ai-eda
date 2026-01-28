@@ -1,0 +1,130 @@
+{
+	"name": "pro-api-sdk",
+	"uuid": "40f899999cc34dd484ce185567a5eaaa",
+	"displayName": "WebSocket 桥接器 (Updated)",
+	"description": "WebSocket Bridge - 本地服务器连接扩展",
+	"version": "1.0.0",
+	"publisher": "JLCEDA <support@lceda.cn>",
+	"engines": {
+		"eda": "^2.3.0"
+	},
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "extension-store",
+		"url": ""
+	},
+	"categories": "Other",
+	"keywords": [
+		"WebSocket",
+		"Bridge",
+		"LocalServer"
+	],
+	"images": {
+		"logo": "./images/logo.png"
+	},
+	"homepage": "https://pro.lceda.cn",
+	"bugs": "https://lceda.cn/page/feedback?originPage=other",
+	"activationEvents": {},
+	"entry": "./dist/index",
+	"dependentExtensions": {},
+	"headerMenus": {
+		"home": [
+			{
+				"id": "WebSocketBridge",
+				"title": "WebSocket 桥接器",
+				"menuItems": [
+					{
+						"id": "init",
+						"title": "初始插件",
+						"registerFn": "init"
+					},
+					{
+						"id": "Connect",
+						"title": "连接服务器",
+						"registerFn": "connectToServer"
+					},
+					{
+						"id": "ConnectionStatus",
+						"title": "连接状态...",
+						"registerFn": "showConnectionStatus"
+					},
+					{
+						"id": "Reconnect",
+						"title": "重新连接",
+						"registerFn": "reconnectToServer"
+					},
+					{
+						"id": "Disconnect",
+						"title": "断开连接",
+						"registerFn": "disconnectFromServer"
+					},
+					{
+						"id": "Separator1",
+						"title": "-"
+					},
+					{
+						"id": "About",
+						"title": "关于...",
+						"registerFn": "about"
+					}
+				]
+			}
+		],
+		"sch": [
+			{
+				"id": "WebSocketBridge",
+				"title": "WebSocket 桥接器",
+				"menuItems": [
+					{
+						"id": "init",
+						"title": "初始插件",
+						"registerFn": "init"
+					},
+					{
+						"id": "Connect",
+						"title": "连接服务器",
+						"registerFn": "connectToServer"
+					},
+					{
+						"id": "ConnectionStatus",
+						"title": "连接状态...",
+						"registerFn": "showConnectionStatus"
+					},
+					{
+						"id": "Reconnect",
+						"title": "重新连接",
+						"registerFn": "reconnectToServer"
+					}
+				]
+			}
+		],
+		"pcb": [
+			{
+				"id": "WebSocketBridge",
+				"title": "WebSocket 桥接器",
+				"menuItems": [
+					{
+						"id": "init",
+						"title": "初始插件",
+						"registerFn": "init"
+					},
+					{
+						"id": "Connect",
+						"title": "连接服务器",
+						"registerFn": "connectToServer"
+					},
+					{
+						"id": "ConnectionStatus",
+						"title": "连接状态...",
+						"registerFn": "showConnectionStatus"
+					},
+					{
+						"id": "Reconnect",
+						"title": "重新连接",
+						"registerFn": "reconnectToServer"
+					}
+				]
+			}
+		]
+	}
+}
