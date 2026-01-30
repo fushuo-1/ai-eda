@@ -345,3 +345,131 @@ export interface PCBCalculateComponentRelativePositionResult {
 	sameLayer?: boolean;
 	error?: string;
 }
+
+// ====================================================================
+// SCH Netlist Types (原理图网表类型)
+// ====================================================================
+
+/**
+ * 网表引脚连接
+ */
+export interface SCHNetlistPin {
+	designator: string;
+	pin: string;
+}
+
+/**
+ * 网表网络
+ */
+export interface SCHNetlistNet {
+	name: string;
+	pins: SCHNetlistPin[];
+}
+
+/**
+ * 网表元器件
+ */
+export interface SCHNetlistComponent {
+	designator: string;
+	footprint: string;
+	value: string;
+}
+
+/**
+ * 引脚到网络映射
+ */
+export interface SCHPinToNetworkMap {
+	[key: string]: string; // "designator-pin" -> networkName
+}
+
+/**
+ * 获取网表参数
+ */
+export interface SCHGetNetlistParams {
+	/** 是否包含原始网表字符串 */
+	includeRaw?: boolean;
+}
+
+/**
+ * 网表统计信息
+ */
+export interface SCHNetlistStats {
+	totalComponents: number;
+	totalNets: number;
+	totalConnections: number;
+}
+
+/**
+ * 获取网表结果
+ */
+export interface SCHGetNetlistResult {
+	success: boolean;
+	components?: SCHNetlistComponent[];
+	nets?: SCHNetlistNet[];
+	pinToNetworkMap?: SCHPinToNetworkMap;
+	stats?: SCHNetlistStats;
+	rawNetlist?: string;
+	error?: string;
+}
+
+// ====================================================================
+// SCH BOM Types (原理图BOM类型)
+// ====================================================================
+
+/**
+ * BOM 组件条目
+ */
+export interface SCHBOMComponent {
+	designator: string;
+	value: string;
+	footprint: string;
+	manufacturer?: string;
+	supplier?: string;
+	supplierId?: string;
+	addIntoBom: boolean;
+	addIntoPcb: boolean;
+}
+
+/**
+ * BOM 分组条目
+ */
+export interface SCHBOMGroupedEntry {
+	value: string;
+	footprint: string;
+	designators: string[];
+	count: number;
+	manufacturer?: string;
+	supplier?: string;
+	supplierId?: string;
+}
+
+/**
+ * BOM 统计信息
+ */
+export interface SCHBOMStats {
+	totalComponents: number;
+	bomComponents: number;
+	nonBomComponents: number;
+	uniquePartNumbers: number;
+}
+
+/**
+ * 获取 BOM 参数
+ */
+export interface SCHGetBomParams {
+	/** 是否按值和封装分组（默认: true） */
+	groupByValue?: boolean;
+	/** 是否包含非 BOM 组件（默认: false） */
+	includeNonBom?: boolean;
+}
+
+/**
+ * 获取 BOM 结果
+ */
+export interface SCHGetBomResult {
+	success: boolean;
+	components?: SCHBOMComponent[];
+	grouped?: SCHBOMGroupedEntry[];
+	stats?: SCHBOMStats;
+	error?: string;
+}

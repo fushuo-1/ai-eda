@@ -47,4 +47,27 @@ export declare const schGetComponentPinsSchema: z.ZodObject<{
 }, {
     primitiveId: string;
 }>;
+/**
+ * Get schematic netlist schema
+ */
+export declare const schGetNetlistSchema: z.ZodObject<{
+    includeRaw: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    includeRaw: boolean;
+}, {
+    includeRaw?: boolean | undefined;
+}>;
+/**
+ * Get schematic BOM schema
+ */
+export declare const schGetBomSchema: z.ZodObject<{
+    groupByValue: z.ZodDefault<z.ZodBoolean>;
+    includeNonBom: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    groupByValue: boolean;
+    includeNonBom: boolean;
+}, {
+    groupByValue?: boolean | undefined;
+    includeNonBom?: boolean | undefined;
+}>;
 //# sourceMappingURL=schematic.d.ts.map

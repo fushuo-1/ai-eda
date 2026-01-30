@@ -16,6 +16,8 @@ import type {
 	SCHGetAllComponentsParams,
 	SCHGetComponentByDesignatorParams,
 	SCHGetComponentPinsParams,
+	SCHGetNetlistParams,
+	SCHGetBomParams,
 } from './protocol.js';
 import { PCBApiAdapter } from './pcb-api-adapter.js';
 import { SCHApiAdapter } from './sch-api-adapter.js';
@@ -535,6 +537,18 @@ export class WebSocketClient {
 				case 'get_component_pins':
 					result = await this.schAdapter.getComponentPins(
 						params as unknown as SCHGetComponentPinsParams
+					);
+					break;
+
+				case 'get_netlist':
+					result = await this.schAdapter.getNetlist(
+						params as unknown as SCHGetNetlistParams
+					);
+					break;
+
+				case 'get_bom':
+					result = await this.schAdapter.getBom(
+						params as unknown as SCHGetBomParams
 					);
 					break;
 

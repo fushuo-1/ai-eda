@@ -44,3 +44,24 @@ export const schGetComponentPinsSchema = z.object({
     .min(1, 'Primitive ID is required')
     .describe('Component primitive ID'),
 });
+
+/**
+ * Get schematic netlist schema
+ */
+export const schGetNetlistSchema = z.object({
+  includeRaw: z.boolean()
+    .default(false)
+    .describe('Include raw netlist string in response'),
+});
+
+/**
+ * Get schematic BOM schema
+ */
+export const schGetBomSchema = z.object({
+  groupByValue: z.boolean()
+    .default(true)
+    .describe('Group components by value and footprint'),
+  includeNonBom: z.boolean()
+    .default(false)
+    .describe('Include components not marked for BOM'),
+});

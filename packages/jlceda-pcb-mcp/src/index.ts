@@ -202,6 +202,152 @@ server.registerTool(
 );
 
 // ====================================================================
+// Schematic Netlist and BOM Tools
+// ====================================================================
+
+server.registerTool(
+  'sch_get_netlist',
+  {
+    title: '获取原理图网表',
+    description: `获取原理图网表和引脚连接关系（Allegro 格式）。
+
+参数:
+  - includeRaw (可选): 是否包含原始网表字符串（默认: false）
+
+返回:
+  - 元器件列表（designator, footprint, value）
+  - 网络列表（name, pins）
+  - 引脚到网络映射
+  - 统计信息`,
+    inputSchema: SchematicSchemas.schGetNetlistSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  (args) => executeTool('sch.get_netlist', args, (result) => {
+    const components = result.components || [];
+    const nets = result.nets || [];
+    const stats = result.stats;
+    const pinToNetworkMap = result.pinToNetworkMap || {};
+
+    let markdown = 'Schematic Netlist:\n\n';
+
+    if (stats) {
+      markdown += `**Statistics:**\n`;
+      markdown += `- Components: ${stats.totalComponents}\n`;
+      markdown += `- Networks: ${stats.totalNets}\n`;
+      markdown += `- Connections: ${stats.totalConnections}\n\n`;
+    }
+
+    markdown += `**Components (${components.length}):**\n`;
+    components.slice(0, 20).forEach((c: any, i: number) => {
+      markdown += `${i + 1}. ${c.designator} - ${c.footprint} (${c.value || 'N/A'})\n`;
+    });
+    if (components.length > 20) {
+      markdown += `... and ${components.length - 20} more\n`;
+    }
+
+    markdown += `\n**Networks (${nets.length}):**\n`;
+    nets.slice(0, 15).forEach((net: any, i: number) => {
+      const pinStr = net.pins.slice(0, 5).map((p: any) => `${p.designator}-${p.pin}`).join(', ');
+      const more = net.pins.length > 5 ? ` ...(+${net.pins.length - 5})` : '';
+      markdown += `${i + 1}. ${net.name}: ${pinStr}${more}\n`;
+    });
+    if (nets.length > 15) {
+      markdown += `... and ${nets.length - 15} more\n`;
+    }
+
+    markdown += `\n**Pin-to-Network Mapping (${Object.keys(pinToNetworkMap).length} entries):**\n`;
+    const entries = Object.entries(pinToNetworkMap).slice(0, 20);
+    entries.forEach(([pin, net]) => {
+      markdown += `  ${pin} -> ${net}\n`;
+    });
+    if (Object.keys(pinToNetworkMap).length > 20) {
+      markdown += `  ... and ${Object.keys(pinToNetworkMap).length - 20} more\n`;
+    }
+
+    return {
+      markdown: truncateResponse(markdown, DEFAULT_CHARACTER_LIMIT, 'netlist entries'),
+      structured: { components, nets, pinToNetworkMap, stats },
+    };
+  })
+);
+
+server.registerTool(
+  'sch_get_bom',
+  {
+    title: '获取原理图 BOM',
+    description: `获取原理图物料清单（BOM）。
+
+参数:
+  - groupByValue (可选): 按值和封装分组（默认: true）
+  - includeNonBom (可选): 包含非 BOM 组件（默认: false）
+
+返回:
+  - 组件列表（designator, value, footprint）
+  - 按类型分组的条目
+  - 统计信息`,
+    inputSchema: SchematicSchemas.schGetBomSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  (args) => executeTool('sch.get_bom', args, (result) => {
+    const components = result.components || [];
+    const grouped = result.grouped || [];
+    const stats = result.stats;
+
+    let markdown = 'Schematic BOM:\n\n';
+
+    if (stats) {
+      markdown += `**Statistics:**\n`;
+      markdown += `- Total Components: ${stats.totalComponents}\n`;
+      markdown += `- BOM Components: ${stats.bomComponents}\n`;
+      markdown += `- Non-BOM Components: ${stats.nonBomComponents}\n`;
+      markdown += `- Unique Part Numbers: ${stats.uniquePartNumbers}\n\n`;
+    }
+
+    if (grouped.length > 0) {
+      markdown += `**Grouped by Value (${grouped.length} entries):**\n\n`;
+      grouped.forEach((entry: any, i: number) => {
+        markdown += `${i + 1}. ${entry.value} (${entry.footprint || 'N/A'})\n`;
+        markdown += `   - Quantity: ${entry.count}\n`;
+        markdown += `   - Designators: ${entry.designators.join(', ')}\n`;
+        if (entry.manufacturer) {
+          markdown += `   - Manufacturer: ${entry.manufacturer}\n`;
+        }
+        if (entry.supplierId) {
+          markdown += `   - Supplier ID: ${entry.supplierId}\n`;
+        }
+        markdown += '\n';
+      });
+    }
+
+    if (components.length > 0 && grouped.length === 0) {
+      markdown += `**All Components (${components.length}):**\n\n`;
+      components.slice(0, 30).forEach((c: any, i: number) => {
+        markdown += `${i + 1}. ${c.designator} - ${c.value} (${c.footprint || 'N/A'})\n`;
+        markdown += `   - BOM: ${c.addIntoBom ? 'Yes' : 'No'}, PCB: ${c.addIntoPcb ? 'Yes' : 'No'}\n`;
+      });
+      if (components.length > 30) {
+        markdown += `... and ${components.length - 30} more\n`;
+      }
+    }
+
+    return {
+      markdown: truncateResponse(markdown, DEFAULT_CHARACTER_LIMIT, 'BOM entries'),
+      structured: { components, grouped, stats },
+    };
+  })
+);
+
+// ====================================================================
 // PCB Tools
 // ====================================================================
 

@@ -223,8 +223,6 @@ Claude: [调用 pcb_set_component_transform，设置 designator=U1, x=1500, y=12
 - 仅Windows支持端口管理（自动终止占用端口8765的进程）
 - 同一时间仅支持单个客户端连接
 
-### 有BUG的API (避免使用)
-- **`eda.sch_Netlist.getNetlist()`** - 存在BUG，结果不可靠
 
 ### 坐标系统
 - 所有位置默认使用 **mil** (千分之一英寸)，除非另有说明

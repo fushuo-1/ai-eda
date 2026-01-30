@@ -14,6 +14,10 @@ import type {
 	SCHGetAllComponentsResult,
 	SCHGetComponentByDesignatorResult,
 	SCHGetComponentPinsResult,
+	SCHGetNetlistParams,
+	SCHGetNetlistResult,
+	SCHGetBomParams,
+	SCHGetBomResult,
 } from './protocol.js';
 
 /**
@@ -276,5 +280,282 @@ export class SCHApiAdapter {
 		}
 
 		return 'COMPONENT';
+	}
+
+	/**
+	 * 获取原理图网表（仅支持 Allegro 格式）
+	 *
+	 * @param params - 参数对象
+	 * @returns 网表信息
+	 */
+	async getNetlist(
+		params: SCHGetNetlistParams = {}
+	): Promise<SCHGetNetlistResult> {
+		try {
+			console.log('[SCH API] Getting schematic netlist:', params);
+
+			// 调用嘉立创EDA API获取网表
+			const netlistString = await eda.sch_Netlist.getNetlist('Allegro');
+
+			if (!netlistString) {
+				return {
+					success: false,
+					error: 'Failed to retrieve netlist from API',
+				};
+			}
+
+			console.log(`[SCH API] Netlist retrieved, length: ${netlistString.length}`);
+
+			// 解析网表
+			const { components, nets } = this.parseAllegroNetlist(netlistString);
+
+			// 创建引脚到网络映射
+			const pinToNetworkMap: Record<string, string> = {};
+			nets.forEach((net) => {
+				net.pins.forEach((pin) => {
+					const key = `${pin.designator}-${pin.pin}`;
+					pinToNetworkMap[key] = net.name;
+				});
+			});
+
+			const totalConnections = nets.reduce((sum, net) => sum + net.pins.length, 0);
+
+			const stats = {
+				totalComponents: components.length,
+				totalNets: nets.length,
+				totalConnections,
+			};
+
+			console.log(
+				`[SCH API] Netlist parsed: ${stats.totalComponents} components, ${stats.totalNets} nets, ${stats.totalConnections} connections`
+			);
+
+			return {
+				success: true,
+				components,
+				nets,
+				pinToNetworkMap,
+				stats,
+				rawNetlist: params.includeRaw ? netlistString : undefined,
+			};
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			console.error('[SCH API] getNetlist error:', error);
+			return {
+				success: false,
+				error: errorMessage,
+			};
+		}
+	}
+
+	/**
+	 * 解析 Allegro 格式网表
+	 *
+	 * @param netlist - 网表字符串
+	 * @returns 解析后的元器件和网络列表
+	 */
+	private parseAllegroNetlist(netlist: string): {
+		components: Array<{ designator: string; footprint: string; value: string }>;
+		nets: Array<{ name: string; pins: Array<{ designator: string; pin: string }> }>;
+	} {
+		const lines = netlist.split('\n').filter((l) => l.trim());
+		const components: Array<{ designator: string; footprint: string; value: string }> = [];
+		const nets: Array<{ name: string; pins: Array<{ designator: string; pin: string }> }> = [];
+
+		let section = '';
+		let currentNet: { name: string; pins: Array<{ designator: string; pin: string }> } | null = null;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+
+			if (trimmed === '$PACKAGES') {
+				section = 'PACKAGES';
+				continue;
+			}
+
+			if (trimmed === '$A_PROPERTIES') {
+				section = 'PROPERTIES';
+				continue;
+			}
+
+			if (trimmed === '$NETS') {
+				section = 'NETS';
+				continue;
+			}
+
+			if (trimmed.startsWith('$') && !trimmed.startsWith('$1N')) {
+				continue;
+			}
+
+			if (trimmed === '$END') {
+				break;
+			}
+
+			if (!trimmed) continue;
+
+			const semicolonIdx = trimmed.indexOf(';');
+			if (semicolonIdx === -1) continue;
+
+			if (section === 'PACKAGES') {
+				const leftPart = trimmed.substring(0, semicolonIdx).trim();
+				const rightPart = trimmed.substring(semicolonIdx + 1).trim();
+
+				const designators = rightPart.split(/[\s,]+/).filter((d) => d && d !== ',');
+				const parts = leftPart.split('!');
+				const footprint = parts[0]?.trim() || '';
+				const value = parts[2]?.trim() || '';
+
+				designators.forEach((designator) => {
+					if (designator) {
+						components.push({ designator, footprint, value });
+					}
+				});
+			}
+
+			if (section === 'NETS') {
+				let netName = trimmed.substring(0, semicolonIdx).trim();
+				const pinsStr = trimmed.substring(semicolonIdx + 1).trim();
+
+				// 去除网络名两端的单引号
+				if (netName.startsWith("'") && netName.endsWith("'")) {
+					netName = netName.slice(1, -1);
+				}
+
+				currentNet = { name: netName, pins: [] };
+				nets.push(currentNet);
+
+				const pins = pinsStr.split(/[\s,]+/).filter((p) => p && p !== ',');
+				pins.forEach((pin) => {
+					const match = pin.match(/^([A-Z0-9]+)\.(\d+)$/);
+					if (match) {
+						currentNet!.pins.push({ designator: match[1], pin: match[2] });
+					}
+				});
+			}
+		}
+
+		return { components, nets };
+	}
+
+	/**
+	 * 获取原理图 BOM
+	 *
+	 * @param params - 参数对象
+	 * @returns BOM 信息
+	 */
+	async getBom(params: SCHGetBomParams = {}): Promise<SCHGetBomResult> {
+		try {
+			console.log('[SCH API] Getting schematic BOM:', params);
+
+			const groupByValue = params.groupByValue !== false;
+			const includeNonBom = params.includeNonBom === true;
+
+			// 获取所有组件
+			const allComponents = await eda.sch_PrimitiveComponent.getAll();
+
+			if (!allComponents) {
+				return {
+					success: false,
+					error: 'Failed to retrieve components from API',
+				};
+			}
+
+			console.log(`[SCH API] Found ${allComponents.length} components`);
+
+			// 转换为 BOM 组件列表
+			const bomComponents = allComponents
+				.filter((comp) => includeNonBom || comp.getState_AddIntoBom())
+				.map((comp) => ({
+					designator: comp.getState_Designator() || '',
+					value: comp.getState_Name() || '',
+					footprint: '',
+					manufacturer: comp.manufacturer || '',
+					supplier: comp.supplier || '',
+					supplierId: comp.supplierId || '',
+					addIntoBom: comp.getState_AddIntoBom() ?? false,
+					addIntoPcb: comp.getState_AddIntoPcb() ?? false,
+				}));
+
+			console.log(`[SCH API] Filtered to ${bomComponents.length} BOM components`);
+
+			// 计算统计信息
+			const bomComponentCount = bomComponents.filter((c) => c.addIntoBom).length;
+			const nonBomComponentCount = bomComponents.filter((c) => !c.addIntoBom).length;
+
+			let groupedEntries: Array<{
+				value: string;
+				footprint: string;
+				designators: string[];
+				count: number;
+				manufacturer?: string;
+				supplier?: string;
+				supplierId?: string;
+			}> = [];
+
+			if (groupByValue) {
+				// 按 value 和 footprint 分组
+				const groupMap = new Map<
+					string,
+					{
+						value: string;
+						footprint: string;
+						designators: string[];
+						manufacturer?: string;
+						supplier?: string;
+						supplierId?: string;
+					}
+				>();
+
+				for (const comp of bomComponents) {
+					const key = `${comp.value}|${comp.footprint}`;
+
+					if (!groupMap.has(key)) {
+						groupMap.set(key, {
+							value: comp.value,
+							footprint: comp.footprint,
+							designators: [],
+							manufacturer: comp.manufacturer,
+							supplier: comp.supplier,
+							supplierId: comp.supplierId,
+						});
+					}
+
+					const entry = groupMap.get(key)!;
+					entry.designators.push(comp.designator);
+				}
+
+				groupedEntries = Array.from(groupMap.values())
+					.map((entry) => ({
+						...entry,
+						count: entry.designators.length,
+					}))
+					.sort((a, b) => a.designators[0].localeCompare(b.designators[0]));
+			}
+
+			const stats = {
+				totalComponents: bomComponents.length,
+				bomComponents: bomComponentCount,
+				nonBomComponents: nonBomComponentCount,
+				uniquePartNumbers: groupedEntries.length,
+			};
+
+			console.log(
+				`[SCH API] BOM generated: ${stats.bomComponents} BOM items, ${stats.uniquePartNumbers} unique parts`
+			);
+
+			return {
+				success: true,
+				components: bomComponents,
+				grouped: groupByValue ? groupedEntries : undefined,
+				stats,
+			};
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			console.error('[SCH API] getBom error:', error);
+			return {
+				success: false,
+				error: errorMessage,
+			};
+		}
 	}
 }

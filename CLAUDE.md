@@ -124,13 +124,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 - 不要更改 WebSocket 端口 8765 (已硬编码)
 - 不要在生产环境使用 Bun 运时 (仅开发使用)
 
-**⚠️ 已知有BUG的API**
-
-以下API存在官方BUG，不建议使用：
-
-- `eda.sch_Netlist.getNetlist()` - **存在BUG，请勿使用**
-  - 问题描述：API调用不稳定，可能导致获取网表失败
-
 **✅ 可自由修改**
 
 - `packages/jlceda-pcb-mcp/src/` - MCP 服务器逻辑
