@@ -231,11 +231,6 @@ lsof -ti:8765 | xargs kill -9
 2. 查看嘉立创EDA Pro 控制台（F12）检查扩展日志
 3. 确认扩展已连接：菜单 → WebSocket 桥接器 → 显示连接状态
 
-### API 调用错误
-
-检查参数格式，查看扩展控制台日志（F12）。注意以下已知问题：
-
-- `eda.sch_Netlist.getNetlist()` 存在 BUG
 
 ## 文档
 
