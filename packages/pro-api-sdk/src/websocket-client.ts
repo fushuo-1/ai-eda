@@ -41,8 +41,8 @@ export class WebSocketClient {
 	private heartbeatMissedCount = 0;
 	private lastPongTime = 0;
 	private lastPingTime = 0; // 记录最后一次发送ping的时间
-	private readonly HEARTBEAT_INTERVAL = 15000; // 30秒
-	private readonly PONG_TIMEOUT = 5000; // 5秒
+	private readonly HEARTBEAT_INTERVAL = 15000; // 15秒
+	private readonly PONG_TIMEOUT = 10000; // 10秒
 	private readonly HEARTBEAT_MISSED_THRESHOLD = 3; // 连续超时次数
 
 	// 重连相关
@@ -293,14 +293,11 @@ export class WebSocketClient {
 				}
 			}
 
-			// 检查上一次pong是否超时（5秒）
-			// 修复：移除 lastPongTime > 0 的限制
-			// 如果从未收到过pong（初始连接后立即断开），使用发送时间作为基准
-			const timeSinceLastPong = this.lastPongTime > 0
-				? now - this.lastPongTime
-				: now - (this.lastPingTime || now - 10000); // 如果没有lastPingTime，假设10秒前
-
-			if (timeSinceLastPong > this.PONG_TIMEOUT) {
+			// 检查本次发送的ping是否收到响应
+		// 只检查从发送 ping 开始是否超时
+		if (this.lastPingTime > 0) {
+			const timeSincePing = now - this.lastPingTime;
+			if (timeSincePing > this.PONG_TIMEOUT) {
 				this.heartbeatMissedCount++;
 				this.log(`心跳超时 (${this.heartbeatMissedCount}/${this.HEARTBEAT_MISSED_THRESHOLD})`, 'warn');
 
@@ -309,6 +306,7 @@ export class WebSocketClient {
 					this.handleConnectionLost();
 				}
 			}
+		}
 		}, this.HEARTBEAT_INTERVAL);
 	}
 
