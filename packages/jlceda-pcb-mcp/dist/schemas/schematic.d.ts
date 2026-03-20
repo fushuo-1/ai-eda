@@ -48,16 +48,6 @@ export declare const schGetComponentPinsSchema: z.ZodObject<{
     primitiveId: string;
 }>;
 /**
- * Get schematic netlist schema
- */
-export declare const schGetNetlistSchema: z.ZodObject<{
-    includeRaw: z.ZodDefault<z.ZodBoolean>;
-}, "strip", z.ZodTypeAny, {
-    includeRaw: boolean;
-}, {
-    includeRaw?: boolean | undefined;
-}>;
-/**
  * Get schematic BOM schema
  */
 export declare const schGetBomSchema: z.ZodObject<{
@@ -69,5 +59,15 @@ export declare const schGetBomSchema: z.ZodObject<{
 }, {
     groupByValue?: boolean | undefined;
     includeNonBom?: boolean | undefined;
+}>;
+/**
+ * Get schematic netlist file schema (JLCEDA JSON format)
+ */
+export declare const schGetNetlistFileSchema: z.ZodObject<{
+    fileName: z.ZodDefault<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    fileName: string;
+}, {
+    fileName?: string | undefined;
 }>;
 //# sourceMappingURL=schematic.d.ts.map

@@ -473,3 +473,87 @@ export interface SCHGetBomResult {
 	stats?: SCHBOMStats;
 	error?: string;
 }
+
+// ====================================================================
+// SCH Netlist File Types (JLCEDA JSON 格式网表)
+// ====================================================================
+
+/**
+ * JLCEDA 网表元器件（JSON格式）
+ */
+export interface SCHNetlistFileComponent {
+	/** 元器件ID */
+	id: string;
+	/** 位号 */
+	designator: string;
+	/** 名称 */
+	name: string;
+	/** 值 */
+	value: string;
+	/** 封装 */
+	footprint: string;
+	/** 制造商 */
+	manufacturer: string;
+	/** 制造商型号 */
+	manufacturerPart: string;
+	/** 供应商 */
+	supplier: string;
+	/** 供应商型号 */
+	supplierPart: string;
+	/** 是否加入BOM */
+	addIntoBom: boolean;
+	/** 是否转入PCB */
+	addIntoPcb: boolean;
+	/** 引脚列表 */
+	pins: Array<{
+		number: string;
+		name: string;
+		net: string;
+	}>;
+}
+
+/**
+ * JLCEDA 网表网络（JSON格式）
+ */
+export interface SCHNetlistFileNet {
+	/** 网络名称 */
+	name: string;
+	/** 引脚列表 */
+	pins: Array<{
+		designator: string;
+		pin: string;
+		pinName: string;
+	}>;
+}
+
+/**
+ * 获取网表文件参数
+ */
+export interface SCHGetNetlistFileParams {
+	/** 可选：输出文件名 */
+	fileName?: string;
+}
+
+/**
+ * 获取网表文件结果
+ */
+export interface SCHGetNetlistFileResult {
+	success: boolean;
+	/** 网表版本 */
+	version?: string;
+	/** 元器件列表 */
+	components?: SCHNetlistFileComponent[];
+	/** 网络列表 */
+	nets?: SCHNetlistFileNet[];
+	/** 引脚到网络映射 */
+	pinToNetMap?: Record<string, string>;
+	/** 统计信息 */
+	stats?: {
+		version: string;
+		totalComponents: number;
+		networks: number;
+		totalPins: number;
+		avgPinsPerNet: string;
+	};
+	error?: string;
+}

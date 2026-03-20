@@ -206,77 +206,6 @@ server.registerTool(
 // ====================================================================
 
 server.registerTool(
-  'sch_get_netlist',
-  {
-    title: '获取原理图网表',
-    description: `获取原理图网表和引脚连接关系（Allegro 格式）。
-
-参数:
-  - includeRaw (可选): 是否包含原始网表字符串（默认: false）
-
-返回:
-  - 元器件列表（designator, footprint, value）
-  - 网络列表（name, pins）
-  - 引脚到网络映射
-  - 统计信息`,
-    inputSchema: SchematicSchemas.schGetNetlistSchema,
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  (args) => executeTool('sch.get_netlist', args, (result) => {
-    const components = result.components || [];
-    const nets = result.nets || [];
-    const stats = result.stats;
-    const pinToNetworkMap = result.pinToNetworkMap || {};
-
-    let markdown = 'Schematic Netlist:\n\n';
-
-    if (stats) {
-      markdown += `**Statistics:**\n`;
-      markdown += `- Components: ${stats.totalComponents}\n`;
-      markdown += `- Networks: ${stats.totalNets}\n`;
-      markdown += `- Connections: ${stats.totalConnections}\n\n`;
-    }
-
-    markdown += `**Components (${components.length}):**\n`;
-    components.slice(0, 20).forEach((c: any, i: number) => {
-      markdown += `${i + 1}. ${c.designator} - ${c.footprint} (${c.value || 'N/A'})\n`;
-    });
-    if (components.length > 20) {
-      markdown += `... and ${components.length - 20} more\n`;
-    }
-
-    markdown += `\n**Networks (${nets.length}):**\n`;
-    nets.slice(0, 15).forEach((net: any, i: number) => {
-      const pinStr = net.pins.slice(0, 5).map((p: any) => `${p.designator}-${p.pin}`).join(', ');
-      const more = net.pins.length > 5 ? ` ...(+${net.pins.length - 5})` : '';
-      markdown += `${i + 1}. ${net.name}: ${pinStr}${more}\n`;
-    });
-    if (nets.length > 15) {
-      markdown += `... and ${nets.length - 15} more\n`;
-    }
-
-    markdown += `\n**Pin-to-Network Mapping (${Object.keys(pinToNetworkMap).length} entries):**\n`;
-    const entries = Object.entries(pinToNetworkMap).slice(0, 20);
-    entries.forEach(([pin, net]) => {
-      markdown += `  ${pin} -> ${net}\n`;
-    });
-    if (Object.keys(pinToNetworkMap).length > 20) {
-      markdown += `  ... and ${Object.keys(pinToNetworkMap).length - 20} more\n`;
-    }
-
-    return {
-      markdown: truncateResponse(markdown, DEFAULT_CHARACTER_LIMIT, 'netlist entries'),
-      structured: { components, nets, pinToNetworkMap, stats },
-    };
-  })
-);
-
-server.registerTool(
   'sch_get_bom',
   {
     title: '获取原理图 BOM',
@@ -343,6 +272,83 @@ server.registerTool(
     return {
       markdown: truncateResponse(markdown, DEFAULT_CHARACTER_LIMIT, 'BOM entries'),
       structured: { components, grouped, stats },
+    };
+  })
+);
+
+server.registerTool(
+  'sch_get_netlist_file',
+  {
+    title: '获取原理图网表文件 (JLCEDA格式)',
+    description: `获取原理图网表文件，返回 JSON 格式的完整网表数据。
+
+参数:
+  - fileName (可选): 输出文件名 (默认: "netlist.enet")
+
+返回 (JSON数据):
+  - version: 网表版本
+  - components: 元器件列表 (包含引脚和网络信息)
+  - pinToNetMap: 引脚到网络的映射表
+  - stats: 统计信息`,
+    inputSchema: SchematicSchemas.schGetNetlistFileSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  (args) => executeTool('sch.get_netlist_file', args || {}, (result) => {
+    const { version, components, nets, pinToNetMap, stats } = result;
+
+    let markdown = `✅ JLCEDA Netlist File (Version: ${version})\n\n`;
+
+    if (stats) {
+      markdown += `**Statistics:**\n`;
+      markdown += `- Components: ${stats.totalComponents}\n`;
+      markdown += `- Networks: ${stats.networks}\n`;
+      markdown += `- Total Pins: ${stats.totalPins}\n`;
+      markdown += `- Avg Pins/Net: ${stats.avgPinsPerNet}\n\n`;
+    }
+
+    markdown += `**Components (${components.length}):**\n`;
+    components.slice(0, 15).forEach((c: any, i: number) => {
+      const bomMark = c.addIntoBom ? '[B]' : '';
+      const pcbMark = c.addIntoPcb ? '[P]' : '';
+      markdown += `${i + 1}. ${c.designator} ${bomMark}${pcbMark} - ${c.name || c.value} (${c.footprint || 'N/A'})\n`;
+    });
+    if (components.length > 15) {
+      markdown += `... and ${components.length - 15} more\n`;
+    }
+
+    markdown += `\n**Networks (${nets.length}):**\n`;
+    nets.slice(0, 10).forEach((net: any, i: number) => {
+      const pins = net.pins.slice(0, 4).map((p: any) => `${p.designator}.${p.pin}`).join(', ');
+      const more = net.pins.length > 4 ? `... (+${net.pins.length - 4})` : '';
+      markdown += `${i + 1}. ${net.name}: ${pins}${more}\n`;
+    });
+    if (nets.length > 10) {
+      markdown += `... and ${nets.length - 10} more\n`;
+    }
+
+    markdown += `\n**Pin-to-Network Mapping (${Object.keys(pinToNetMap).length} entries):**\n`;
+    const entries = Object.entries(pinToNetMap).slice(0, 20);
+    entries.forEach(([pin, net]) => {
+      markdown += `  ${pin} -> ${net}\n`;
+    });
+    if (Object.keys(pinToNetMap).length > 20) {
+      markdown += `  ... and ${Object.keys(pinToNetMap).length - 20} more\n`;
+    }
+
+    return {
+      markdown: truncateResponse(markdown, DEFAULT_CHARACTER_LIMIT, 'netlist entries'),
+      structured: {
+        version,
+        components,
+        nets,
+        pinToNetMap,
+        stats
+      },
     };
   })
 );

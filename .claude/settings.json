@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npm run:*)",
-      "Bash(npm install:*)",
-      "Bash(grep -n PONG_TIMEOUT d:/OneDrive/ai-eda/packages/pro-api-sdk/dist/*)"
-    ]
-  }
-}

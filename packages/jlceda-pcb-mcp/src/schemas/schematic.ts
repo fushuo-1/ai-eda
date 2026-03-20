@@ -46,15 +46,6 @@ export const schGetComponentPinsSchema = z.object({
 });
 
 /**
- * Get schematic netlist schema
- */
-export const schGetNetlistSchema = z.object({
-  includeRaw: z.boolean()
-    .default(false)
-    .describe('Include raw netlist string in response'),
-});
-
-/**
  * Get schematic BOM schema
  */
 export const schGetBomSchema = z.object({
@@ -65,3 +56,12 @@ export const schGetBomSchema = z.object({
     .default(false)
     .describe('Include components not marked for BOM'),
 });
+
+/**
+ * Get schematic netlist file schema (JLCEDA JSON format)
+ */
+export const schGetNetlistFileSchema = z.object({
+  fileName: z.string()
+    .default('netlist.enet')
+    .describe('Output filename (default: "netlist.enet")'),
+}).describe('Get netlist file in JLCEDA JSON format');

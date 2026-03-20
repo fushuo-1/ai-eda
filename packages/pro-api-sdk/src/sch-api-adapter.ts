@@ -14,10 +14,10 @@ import type {
 	SCHGetAllComponentsResult,
 	SCHGetComponentByDesignatorResult,
 	SCHGetComponentPinsResult,
-	SCHGetNetlistParams,
-	SCHGetNetlistResult,
 	SCHGetBomParams,
 	SCHGetBomResult,
+	SCHGetNetlistFileParams,
+	SCHGetNetlistFileResult,
 } from './protocol.js';
 
 /**
@@ -557,5 +557,177 @@ export class SCHApiAdapter {
 				error: errorMessage,
 			};
 		}
+	}
+
+	/**
+	 * 获取原理图网表文件（JLCEDA JSON 格式）
+	 *
+	 * @param params - 参数对象
+	 * @returns 网表 JSON 数据
+	 */
+	async getNetlistFile(
+		params: SCHGetNetlistFileParams = {}
+	): Promise<SCHGetNetlistFileResult> {
+		try {
+			console.log('[SCH API] Getting schematic netlist file:', params);
+
+			const fileName = params.fileName || 'netlist.enet';
+
+			// 调用嘉立创EDA API获取网表文件
+			const file = await eda.sch_ManufactureData.getNetlistFile(
+				fileName,
+				ESYS_NetlistType.JLCEDA_PRO
+			);
+
+			if (!file) {
+				return {
+					success: false,
+					error: 'Failed to retrieve netlist file from API',
+				};
+			}
+
+			console.log(`[SCH API] Netlist file retrieved: ${file.name}, size: ${file.size}`);
+
+			// 读取 File 对象内容
+			const content = await new Promise<string>((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = (e) => resolve(e.target.result);
+				reader.onerror = () => reject(new Error('Failed to read file'));
+				reader.readAsText(file);
+			});
+
+			console.log(`[SCH API] Netlist content loaded, length: ${content.length}`);
+
+			// 解析 JSON 格式网表
+			const parsed = this.parseJLCEDAJsonNetlist(content);
+
+			const totalPins = parsed.nets.reduce((sum, net) => sum + net.pins.length, 0);
+			const avgPinsPerNet = parsed.nets.length > 0
+				? (totalPins / parsed.nets.length).toFixed(1)
+				: '0';
+
+			const stats = {
+				version: parsed.version,
+				totalComponents: parsed.components.length,
+				networks: parsed.nets.length,
+				totalPins,
+				avgPinsPerNet
+			};
+
+			console.log(
+				`[SCH API] Netlist parsed: ${stats.totalComponents} components, ${stats.networks} networks, ${stats.totalPins} pins`
+			);
+
+			return {
+				success: true,
+				version: parsed.version,
+				components: parsed.components,
+				nets: parsed.nets,
+				pinToNetMap: parsed.pinToNetMap,
+				stats,
+			};
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			console.error('[SCH API] getNetlistFile error:', error);
+			return {
+				success: false,
+				error: errorMessage,
+			};
+		}
+	}
+
+	/**
+	 * 解析 JLCEDA JSON 格式网表
+	 */
+	private parseJLCEDAJsonNetlist(jsonString: string): {
+		version: string;
+		components: Array<{
+			id: string;
+			designator: string;
+			name: string;
+			value: string;
+			footprint: string;
+			manufacturer: string;
+			manufacturerPart: string;
+			supplier: string;
+			supplierPart: string;
+			addIntoBom: boolean;
+			addIntoPcb: boolean;
+			pins: Array<{
+				number: string;
+				name: string;
+				net: string;
+			}>;
+		}>;
+		nets: Array<{
+			name: string;
+			pins: Array<{
+				designator: string;
+				pin: string;
+				pinName: string;
+			}>;
+		}>;
+		pinToNetMap: Record<string, string>;
+	} {
+		const data = JSON.parse(jsonString);
+		const version = data.version || 'unknown';
+		const rawComponents = data.components || {};
+
+		const components: any[] = [];
+		const nets = new Map<string, any[]>();
+		const pinToNetMap: Record<string, string> = {};
+
+		Object.entries(rawComponents).forEach(([compId, compData]: [string, any]) => {
+			const props = compData.props || {};
+			const pinInfoMap = compData.pinInfoMap || {};
+
+			const component = {
+				id: compId,
+				designator: props.Designator || '',
+				name: props.Name || '',
+				value: props.Name || '',
+				footprint: props.FootprintName || '',
+				manufacturer: props.Manufacturer || '',
+				manufacturerPart: props['Manufacturer Part'] || '',
+				supplier: props.Supplier || '',
+				supplierPart: props['Supplier Part'] || '',
+				addIntoBom: props['Add into BOM'] === 'yes',
+				addIntoPcb: props['Convert to PCB'] === 'yes',
+				pins: [] as any[]
+			};
+
+			Object.values(pinInfoMap).forEach((pinInfo: any) => {
+				const pin = {
+					number: pinInfo.number,
+					name: pinInfo.name,
+					net: pinInfo.net || ''
+				};
+				component.pins.push(pin);
+
+				if (pin.net) {
+					pinToNetMap[`${component.designator}-${pin.number}`] = pin.net;
+
+					if (!nets.has(pin.net)) {
+						nets.set(pin.net, []);
+					}
+					nets.get(pin.net)!.push({
+						designator: component.designator,
+						pin: pin.number,
+						pinName: pin.name
+					});
+				}
+			});
+
+			components.push(component);
+		});
+
+		const netArray = Array.from(nets.entries()).map(([name, pins]) => ({ name, pins }));
+
+		return {
+			version,
+			components,
+			nets: netArray,
+			pinToNetMap
+		};
 	}
 }
