@@ -12,9 +12,10 @@ export declare class WindowsPortManager {
     /**
      * Check and clear port if occupied
      * @param port - Port number to check and clear
+     * @param currentPid - Current process PID to avoid killing self
      * @returns true if port is available or was successfully cleared
      */
-    checkAndClearPort(port: number): Promise<boolean>;
+    checkAndClearPort(port: number, currentPid?: number): Promise<boolean>;
     /**
      * Detect port occupancy using netstat
      * @param port - Port number to check

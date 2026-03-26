@@ -18,9 +18,10 @@ export class WindowsPortManager {
   /**
    * Check and clear port if occupied
    * @param port - Port number to check and clear
+   * @param currentPid - Current process PID to avoid killing self
    * @returns true if port is available or was successfully cleared
    */
-  async checkAndClearPort(port: number): Promise<boolean> {
+  async checkAndClearPort(port: number, currentPid?: number): Promise<boolean> {
     // Step 1: Detect port occupancy
     const info = await this.detectPortOccupancy(port);
 
@@ -29,7 +30,13 @@ export class WindowsPortManager {
       return true;
     }
 
-    // Step 2: Kill process
+    // Step 2: Check if it's our own process
+    if (info.pid && info.pid === currentPid) {
+      console.error(`[PortManager] Port ${port} is occupied by current process (${currentPid}), reusing`);
+      return true;
+    }
+
+    // Step 3: Kill process
     if (!info.pid) {
       console.error(`[PortManager] Port ${port} is occupied but cannot determine PID`);
       return false;

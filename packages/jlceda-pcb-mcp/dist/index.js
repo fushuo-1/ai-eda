@@ -7,6 +7,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import WebSocket from 'ws';
 // WebSocket server
 import { MCPServerWebSocket } from './ws-server.js';
 // Windows port manager
@@ -877,20 +878,109 @@ server.registerTool('pcb_check_component_spacing', {
 // ====================================================================
 // Main Server Startup
 // ====================================================================
+/**
+ * Notify old MCP process to gracefully shutdown
+ * @param port - WebSocket port
+ * @returns true if shutdown was acknowledged, false otherwise
+ */
+async function notifyOldProcessShutdown(port) {
+    return new Promise((resolve) => {
+        const wsUrl = `ws://localhost:${port}`;
+        console.error(`[MCP] Notifying old process at ${wsUrl} to shutdown...`);
+        const ws = new WebSocket(wsUrl, { handshakeTimeout: 3000 });
+        const timeout = setTimeout(() => {
+            console.error('[MCP] Shutdown notification timeout, old process may not be responding');
+            ws.close();
+            resolve(false);
+        }, 5000);
+        ws.on('open', () => {
+            console.error('[MCP] Connected to old process, sending shutdown request...');
+            const shutdownRequest = {
+                id: `shutdown_${Date.now()}`,
+                method: 'shutdown',
+                params: { newProcessPid: process.pid }
+            };
+            ws.send(JSON.stringify(shutdownRequest));
+        });
+        ws.on('message', (data) => {
+            try {
+                const response = JSON.parse(data.toString());
+                if (response.result?.status === 'shutting_down') {
+                    console.error('[MCP] ✅ Old process acknowledged shutdown');
+                    clearTimeout(timeout);
+                    ws.close();
+                    resolve(true);
+                }
+            }
+            catch (e) {
+                // Ignore parse errors
+            }
+        });
+        ws.on('error', (error) => {
+            console.error(`[MCP] Failed to connect to old process: ${error.message}`);
+            clearTimeout(timeout);
+            resolve(false);
+        });
+        ws.on('close', () => {
+            clearTimeout(timeout);
+        });
+    });
+}
 async function main() {
     try {
+        console.error(`[MCP] ========================================`);
+        console.error(`[MCP] Server starting at ${new Date().toISOString()}`);
+        console.error(`[MCP] Process PID: ${process.pid}`);
+        console.error(`[MCP] Parent PID: ${process.ppid}`);
+        console.error(`[MCP] Command line: ${process.argv.join(' ')}`);
+        console.error(`[MCP] ========================================`);
         const port = 8765;
         const portManager = new WindowsPortManager();
-        // Step 1: Check and clear port if needed
-        console.error(`[MCP] Checking port ${port}...`);
-        const portCleared = await portManager.checkAndClearPort(port);
-        if (!portCleared) {
-            throw new Error(`Failed to acquire port ${port}. ` +
-                `Please manually stop the process using this port or restart your computer.`);
+        const currentPid = process.pid;
+        // Step 1: Check port status and handle graceful handoff
+        console.error(`[MCP] Checking port ${port}... (current PID: ${currentPid})`);
+        const portInfo = await portManager.detectPortOccupancy(port);
+        if (portInfo.isOccupied && portInfo.pid && portInfo.pid !== currentPid) {
+            console.error(`[MCP] Port ${port} is occupied by PID ${portInfo.pid}`);
+            // 尝试通知旧进程优雅关闭
+            const shutdownSuccess = await notifyOldProcessShutdown(port);
+            if (shutdownSuccess) {
+                console.error(`[MCP] ✅ Old process shutdown successfully`);
+                // 等待端口释放
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            else {
+                console.error(`[MCP] ⚠️ Could not notify old process, attempting to kill it...`);
+                await portManager.killProcess(portInfo.pid);
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            // 再次检查端口
+            const recheckInfo = await portManager.detectPortOccupancy(port);
+            if (recheckInfo.isOccupied && recheckInfo.pid !== currentPid) {
+                console.error(`[MCP] ⚠️ Port ${port} still occupied, cannot start`);
+                process.exit(1);
+            }
         }
+        console.error(`[MCP] Port ${port} is available, starting server...`);
         // Step 2: Initialize WebSocket server
         wsServer = await MCPServerWebSocket.create(port);
-        // Step 3: Connect MCP transport
+        // Step 3: Wait for extension connection (up to 10 seconds)
+        console.error('[MCP] Waiting for extension connection...');
+        const maxWaitTime = 10000; // 10 seconds
+        const checkInterval = 500; // 500ms
+        let waited = 0;
+        while (!wsServer.hasConnectedClients() && waited < maxWaitTime) {
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+            waited += checkInterval;
+            console.error(`[MCP] Waiting for extension... ${waited / 1000}s`);
+        }
+        if (wsServer.hasConnectedClients()) {
+            console.error('[MCP] ✅ Extension connected!');
+        }
+        else {
+            console.error('[MCP] ⚠️ No extension connected, proceeding anyway...');
+        }
+        // Step 4: Connect MCP transport
         const transport = new StdioServerTransport();
         await server.connect(transport);
         console.error('JLCEDA PCB MCP Server running');
@@ -906,5 +996,21 @@ async function main() {
 main().catch((error) => {
     console.error('Fatal error:', error);
     process.exit(1);
+});
+// Debug: Log process exit reasons
+process.on('exit', (code) => {
+    console.error(`[MCP] Process exiting with code: ${code}`);
+});
+process.on('SIGTERM', () => {
+    console.error('[MCP] Received SIGTERM');
+});
+process.on('SIGINT', () => {
+    console.error('[MCP] Received SIGINT');
+});
+process.on('uncaughtException', (error) => {
+    console.error('[MCP] Uncaught exception:', error);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[MCP] Unhandled rejection:', reason);
 });
 //# sourceMappingURL=index.js.map

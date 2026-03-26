@@ -41,9 +41,9 @@ export class WebSocketClient {
 	private heartbeatMissedCount = 0;
 	private lastPongTime = 0;
 	private lastPingTime = 0; // 记录最后一次发送ping的时间
-	private readonly HEARTBEAT_INTERVAL = 15000; // 15秒
-	private readonly PONG_TIMEOUT = 10000; // 10秒
-	private readonly HEARTBEAT_MISSED_THRESHOLD = 3; // 连续超时次数
+	private readonly HEARTBEAT_INTERVAL = 2000; // 2秒发送一次心跳
+	private readonly PONG_TIMEOUT = 1000; // 1秒超时
+	private readonly HEARTBEAT_MISSED_THRESHOLD = 1; // 1次超时即判定断连
 
 	// 重连相关
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -51,44 +51,109 @@ export class WebSocketClient {
 	private readonly MAX_RECONNECT_ATTEMPTS = 3;
 	private isManualDisconnect = false; // 区分手动/自动断开
 
+	// 两阶段重连：快速重连 + 指数退避重连
+	private isQuickReconnectPhase = true; // 是否处于快速重连阶段
+	private quickReconnectAttempts = 0;
+	private readonly MAX_QUICK_RECONNECT_ATTEMPTS = 3; // 快速重连3次
+	private quickReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
 	/**
 	 * 连接到本地服务器
+	 * @param timeoutMs - 超时时间（毫秒），默认5000ms，快速重连时使用1000ms
 	 */
-	connect(): Promise<boolean> {
+	connect(timeoutMs: number = 5000): Promise<boolean> {
 		return new Promise((resolve) => {
 			this.log('正在连接本地服务器: ' + this.serverUrl);
 
-			// 设置5秒超时定时器
+			// 重置连接状态（在连接开始时立即重置，避免重连期间发送消息）
+			this.isConnected = false;
+
+			// 设置超时定时器
 			const timeoutId = setTimeout(() => {
-				this.log('连接超时（5秒）', 'error');
+				this.log(`连接超时（${timeoutMs / 1000}秒）`, 'error');
 				console.log('[WebSocket Bridge] 连接失败：超时');
 				eda.sys_ToastMessage.showMessage('连接失败', ESYS_ToastMessageType.ERROR);
 				this.connectionTimeoutTimer = null;
 				resolve(false);
-			}, 5000);
+			}, timeoutMs);
 
 			// 保存超时定时器ID
 			this.connectionTimeoutTimer = timeoutId;
 
 			// 使用全局 eda 对象的 sys_WebSocket 属性
 			try {
-				eda.sys_WebSocket.register(
-					this.connectionId,
-					this.serverUrl,
-					(event: MessageEvent) => this.handleMessage(event.data),
-					() => {
-						// 连接成功回调
+				// 先尝试关闭已存在的连接（避免重复注册导致的状态混乱）
+				try {
+					eda.sys_WebSocket.close(this.connectionId, 1000, '重新连接');
+					this.log('已关闭旧连接');
+				} catch (e) {
+					// 忽略关闭错误，可能不存在旧连接
+				}
+
+				// 短暂延迟后再建立新连接（增加延迟确保旧连接完全关闭）
+				setTimeout(() => {
+					try {
+						// 连接成功后的延迟确认
+						let connectionConfirmed = false;
+
+						eda.sys_WebSocket.register(
+							this.connectionId,
+							this.serverUrl,
+							(event: MessageEvent) => this.handleMessage(event.data),
+							() => {
+								// 连接成功回调 - JLCEDA 可能在实际连接前就调用此回调
+								// 延迟确认以确保连接真正建立
+								setTimeout(() => {
+									if (connectionConfirmed) return; // 避免重复处理
+									connectionConfirmed = true;
+
+									clearTimeout(timeoutId);
+									this.connectionTimeoutTimer = null;
+									this.onConnected();
+
+									this.log('连接成功');
+									console.log('[WebSocket Bridge] 连接成功');
+									eda.sys_ToastMessage.showMessage('连接成功', ESYS_ToastMessageType.SUCCESS);
+									resolve(true);
+								}, 300); // 延迟300ms确认
+							},
+							[]
+						);
+
+						// 备用方案：如果回调没有正确触发，尝试发送测试消息验证连接
+						setTimeout(() => {
+							if (connectionConfirmed) return;
+
+							try {
+								// 尝试发送一个测试消息来验证连接
+								const testMsg = JSON.stringify({ id: 'test_connection', method: 'ping', params: {} });
+								eda.sys_WebSocket.send(this.connectionId, testMsg);
+
+								// 如果发送成功，说明连接正常
+								connectionConfirmed = true;
+								clearTimeout(timeoutId);
+								this.connectionTimeoutTimer = null;
+								this.onConnected();
+
+								this.log('连接成功（通过测试发送确认）');
+								console.log('[WebSocket Bridge] 连接成功');
+								eda.sys_ToastMessage.showMessage('连接成功', ESYS_ToastMessageType.SUCCESS);
+								resolve(true);
+							} catch (e) {
+								// 发送失败，连接可能没有真正建立
+								this.log('连接测试发送失败: ' + e, 'warn');
+							}
+						}, 500);
+
+					} catch (registerError) {
 						clearTimeout(timeoutId);
 						this.connectionTimeoutTimer = null;
-						this.onConnected();
-
-						this.log('连接成功');
-						console.log('[WebSocket Bridge] 连接成功');
-						eda.sys_ToastMessage.showMessage('连接成功', ESYS_ToastMessageType.SUCCESS);
-						resolve(true);
-					},
-					[]
-				);
+						this.log('注册连接失败: ' + registerError, 'error');
+						console.error('[WebSocket Bridge] 注册连接失败:', registerError);
+						eda.sys_ToastMessage.showMessage('连接失败', ESYS_ToastMessageType.ERROR);
+						resolve(false);
+					}
+				}, 200); // 增加延迟到 200ms
 			} catch (error) {
 				clearTimeout(timeoutId);
 				this.connectionTimeoutTimer = null;
@@ -119,6 +184,12 @@ export class WebSocketClient {
 			this.reconnectTimer = null;
 		}
 
+		// 清除快速重连定时器
+		if (this.quickReconnectTimer !== null) {
+			clearTimeout(this.quickReconnectTimer);
+			this.quickReconnectTimer = null;
+		}
+
 		// 停止心跳检测
 		this.stopHeartbeat();
 
@@ -129,23 +200,46 @@ export class WebSocketClient {
 			this.log('已从本地服务器断开');
 		}
 
-		// 重置重连计数
+		// 重置所有重连计数
 		this.reconnectAttempts = 0;
+		this.quickReconnectAttempts = 0;
+		this.isQuickReconnectPhase = true;
 	}
 
 	/**
 	 * 发送响应到服务器
 	 */
 	send(id: string, result: unknown): void {
+		this.log(`send() 被调用 - id: ${id}, isConnected: ${this.isConnected}`);
+
+		// 先检查连接状态
+		if (!this.isConnected) {
+			this.log('发送失败: 连接已断开', 'warn');
+			return;
+		}
+
 		try {
 			const response: WebSocketResponse = { id, result };
-			eda.sys_WebSocket.send(this.connectionId, JSON.stringify(response));
+			const jsonStr = JSON.stringify(response);
+			this.log(`准备发送响应: ${id}, 大小: ${jsonStr.length} 字节`);
+
+			eda.sys_WebSocket.send(this.connectionId, jsonStr);
+
+			this.log('发送成功');
 		} catch (error) {
-			this.log(`发送消息失败: ${error}，连接可能已断开`, 'warn');
-			// 如果发送失败，说明连接已断开，触发重连
-			if (this.isConnected && !this.isManualDisconnect) {
-				this.isConnected = false;
-				this.handleConnectionLost();
+			const errorMsg = String(error);
+			this.log(`发送消息失败: ${errorMsg}`, 'error');
+
+			// 立即标记连接已断开
+			this.isConnected = false;
+			this.stopHeartbeat();
+
+			// 连接状态异常，触发两阶段重连
+			if (!this.isManualDisconnect) {
+				this.log('检测到连接异常，触发自动重连', 'warn');
+				setTimeout(() => {
+					this.handleConnectionLost();
+				}, 500);
 			}
 		}
 	}
@@ -154,15 +248,40 @@ export class WebSocketClient {
 	 * 发送错误响应
 	 */
 	sendError(id: string, code: number, message: string): void {
-		const error: WebSocketError = { code, message };
-		const response: WebSocketResponse = { id, error };
-		eda.sys_WebSocket.send(this.connectionId, JSON.stringify(response));
+		// 先检查连接状态
+		if (!this.isConnected) {
+			this.log('发送错误响应失败: 连接已断开', 'warn');
+			return;
+		}
+
+		try {
+			const error: WebSocketError = { code, message };
+			const response: WebSocketResponse = { id, error };
+			eda.sys_WebSocket.send(this.connectionId, JSON.stringify(response));
+		} catch (err) {
+			const errorMsg = String(err);
+			this.log(`发送错误响应失败: ${errorMsg}`, 'error');
+
+			// 立即标记连接已断开
+			this.isConnected = false;
+			this.stopHeartbeat();
+
+			// 连接状态异常，触发两阶段重连
+			if (!this.isManualDisconnect) {
+				this.log('检测到连接异常，触发自动重连', 'warn');
+				setTimeout(() => {
+					this.handleConnectionLost();
+				}, 500);
+			}
+		}
 	}
 
 	/**
 	 * 处理服务器消息
 	 */
 	private handleMessage(data: string): void {
+		this.log(`收到消息，长度: ${data.length}`);
+
 		try {
 			const message = JSON.parse(data);
 
@@ -172,22 +291,31 @@ export class WebSocketClient {
 				const request = message as WebSocketRequest;
 				const { id, method, params } = request;
 
-				this.log(`收到请求: ${method}`);
+				this.log(`收到请求: ${method}, id: ${id}, isConnected: ${this.isConnected}`);
 
 				//触发消息回调
 				if (this.onMessageCallback) {
 					this.onMessageCallback(method, params);
 				}
 
-				// SCH 操作路由
+				// SCH 操作路由（async 方法需要处理异常）
 				if (method.startsWith('sch.')) {
-					this.handleSCHRequest(id, method, params);
+					this.log('路由到 SCH 处理器');
+					this.handleSCHRequest(id, method, params).catch((error) => {
+						const errorMsg = error instanceof Error ? error.message : String(error);
+						this.log(`SCH 请求处理异常: ${errorMsg}`, 'error');
+						this.sendError(id, -1, `SCH 请求处理失败: ${errorMsg}`);
+					});
 					return;
 				}
 
-				// 检查是否是 PCB 操作
+				// 检查是否是 PCB 操作（async 方法需要处理异常）
 				if (method.startsWith('pcb.')) {
-					this.handlePCBRequest(id, method, params);
+					this.handlePCBRequest(id, method, params).catch((error) => {
+						const errorMsg = error instanceof Error ? error.message : String(error);
+						this.log(`PCB 请求处理异常: ${errorMsg}`, 'error');
+						this.sendError(id, -1, `PCB 请求处理失败: ${errorMsg}`);
+					});
 					return;
 				}
 
@@ -273,6 +401,21 @@ export class WebSocketClient {
 
 			const now = Date.now();
 
+			// 先检查上次 ping 是否超时
+			if (this.lastPingTime > 0) {
+				const timeSincePing = now - this.lastPingTime;
+				if (timeSincePing > this.PONG_TIMEOUT) {
+					this.heartbeatMissedCount++;
+					this.log(`心跳超时 (${this.heartbeatMissedCount}/${this.HEARTBEAT_MISSED_THRESHOLD})`, 'warn');
+
+					if (this.heartbeatMissedCount >= this.HEARTBEAT_MISSED_THRESHOLD) {
+						this.log('连接已丢失，触发重连', 'error');
+						this.handleConnectionLost();
+						return;
+					}
+				}
+			}
+
 			// 发送心跳ping（使用请求格式）
 			try {
 				const pingParams: PingParams = { timestamp: now };
@@ -285,28 +428,21 @@ export class WebSocketClient {
 				this.lastPingTime = now; // 记录发送时间
 				this.log('发送心跳ping');
 			} catch (error) {
-				this.log(`发送心跳失败: ${error}`, 'warn');
-				// 如果发送失败，说明连接已断开，触发重连
-				if (this.isConnected && !this.isManualDisconnect) {
-					this.isConnected = false;
-					this.handleConnectionLost();
+				const errorMsg = String(error);
+				this.log(`发送心跳失败: ${errorMsg}`, 'error');
+
+				// 立即标记连接已断开
+				this.isConnected = false;
+				this.stopHeartbeat();
+
+				// 触发两阶段重连
+				if (!this.isManualDisconnect) {
+					this.log('心跳发送失败，触发自动重连', 'warn');
+					setTimeout(() => {
+						this.handleConnectionLost();
+					}, 500);
 				}
 			}
-
-			// 检查本次发送的ping是否收到响应
-		// 只检查从发送 ping 开始是否超时
-		if (this.lastPingTime > 0) {
-			const timeSincePing = now - this.lastPingTime;
-			if (timeSincePing > this.PONG_TIMEOUT) {
-				this.heartbeatMissedCount++;
-				this.log(`心跳超时 (${this.heartbeatMissedCount}/${this.HEARTBEAT_MISSED_THRESHOLD})`, 'warn');
-
-				if (this.heartbeatMissedCount >= this.HEARTBEAT_MISSED_THRESHOLD) {
-					this.log('连接已丢失，触发重连', 'error');
-					this.handleConnectionLost();
-				}
-			}
-		}
 		}, this.HEARTBEAT_INTERVAL);
 	}
 
@@ -336,23 +472,55 @@ export class WebSocketClient {
 			return;
 		}
 
-		// 触发自动重连
-		await this.attemptReconnect();
+		// 重置重连状态，开始两阶段重连
+		this.isQuickReconnectPhase = true;
+		this.quickReconnectAttempts = 0;
+		this.reconnectAttempts = 0;
+
+		// 第一阶段：快速重连
+		await this.quickReconnect();
 	}
 
 	/**
-	 * 尝试重连（指数退避算法）
+	 * 第一阶段：快速重连（立即触发，1秒超时）
+	 */
+	private async quickReconnect(): Promise<void> {
+		if (this.quickReconnectAttempts >= this.MAX_QUICK_RECONNECT_ATTEMPTS) {
+			this.log('快速重连3次全部失败，进入指数退避阶段', 'warn');
+			this.isQuickReconnectPhase = false;
+			await this.attemptReconnect();
+			return;
+		}
+
+		this.quickReconnectAttempts++;
+		this.log(`快速重连第 ${this.quickReconnectAttempts} 次（1秒超时）...`);
+
+		// 快速重连使用1秒超时，确保3次在3秒内完成
+		const success = await this.connect(1000);
+
+		if (success) {
+			this.log('快速重连成功', 'success');
+			this.quickReconnectAttempts = 0;
+			this.isQuickReconnectPhase = true;
+		} else {
+			// 立即进行下一次快速重连（不等待）
+			await this.quickReconnect();
+		}
+	}
+
+	/**
+	 * 第二阶段：指数退避重连（1秒 → 2秒 → 4秒）
 	 */
 	private async attemptReconnect(): Promise<void> {
 		if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
-			this.log('重连失败次数过多，已放弃', 'error');
+			this.log('指数退避重连3次全部失败，放弃重连', 'error');
 			this.notifyReconnectFailed();
 			return;
 		}
 
 		// 指数退避延迟：第1次1秒，第2次2秒，第3次4秒
 		const delay = Math.pow(2, this.reconnectAttempts) * 1000;
-		this.log(`第 ${this.reconnectAttempts + 1} 次重连，等待 ${delay / 1000} 秒...`);
+		this.log(`指数退避重连第 ${this.reconnectAttempts + 1} 次，等待 ${delay / 1000} 秒...`);
 
 		await new Promise<void>((resolve) => {
 			this.reconnectTimer = setTimeout(resolve, delay);
@@ -362,10 +530,12 @@ export class WebSocketClient {
 		const success = await this.connect();
 
 		if (success) {
-			this.log('重连成功', 'success');
-			this.reconnectAttempts = 0; // 重置计数
+			this.log('指数退避重连成功', 'success');
+			this.reconnectAttempts = 0;
+			this.quickReconnectAttempts = 0;
+			this.isQuickReconnectPhase = true;
 		} else {
-			this.log(`第 ${this.reconnectAttempts} 次重连失败`, 'error');
+			this.log(`指数退避重连第 ${this.reconnectAttempts} 次失败`, 'error');
 			await this.attemptReconnect(); // 继续重试
 		}
 	}
@@ -375,7 +545,10 @@ export class WebSocketClient {
 	 */
 	private notifyReconnectFailed(): void {
 		const message =
-			`自动重连失败（已尝试 ${this.MAX_RECONNECT_ATTEMPTS} 次）\n\n` +
+			`自动重连失败\n\n` +
+			`已尝试：\n` +
+			`• 快速重连 3 次\n` +
+			`• 指数退避重连 3 次（间隔 1秒→2秒→4秒）\n\n` +
 			`请检查：\n` +
 			`1. 本地服务器是否运行 (ws://localhost:8765)\n` +
 			`2. 网络连接是否正常\n` +
@@ -450,7 +623,9 @@ export class WebSocketClient {
 	 */
 	private onConnected(): void {
 		this.isConnected = true;
-		this.reconnectAttempts = 0; // 重置重连计数
+		this.reconnectAttempts = 0; // 重置指数退避重连计数
+		this.quickReconnectAttempts = 0; // 重置快速重连计数
+		this.isQuickReconnectPhase = true; // 重置为快速重连阶段
 		this.lastPongTime = Date.now(); // 初始化心跳时间
 		this.lastPingTime = 0;
 		this.isManualDisconnect = false; // 重置手动断开标志

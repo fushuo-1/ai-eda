@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist)",
+      "Bash(findstr :8765)",
+      "Bash(tasklist /fi \"PID eq 20332\")",
+      "Bash(wmic process:*)",
+      "Bash(findstr \"20332\")",
+      "Bash(curl -s http://localhost:8765)",
+      "Bash(timeout 3 node -e \":*)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(taskkill //F //PID 19176)",
+      "Bash(node -e \"const WebSocket = require\\(''ws''\\); const ws = new WebSocket\\(''ws://localhost:8765''\\); ws.on\\(''open'', \\(\\) => { console.log\\(''Connected!''\\); ws.close\\(\\); }\\); ws.on\\(''error'', \\(e\\) => console.log\\(''Error:'', e.message\\)\\);\")",
+      "Bash(node -e \":*)",
+      "Bash(tasklist /FI \"PID eq 3784\")",
+      "Bash(findstr 3784)",
+      "Read(//c/Users/34317/.claude/**)",
+      "Read(//c/Users/34317/AppData/Roaming/Claude/**)",
+      "Bash(find ~/.claude -name *.json -type f)",
+      "Bash(xargs grep:*)",
+      "Bash(find ~/.claude -name *mcp* -o -name *server*)",
+      "Bash(find ~/.claude/plugins -name *.json -type f)",
+      "Bash(findstr 23096)",
+      "Bash(taskkill /PID 8168 /F)",
+      "Bash(taskkill //PID 8168 //F)",
+      "Read(//c/Users/34317/**)",
+      "Bash(tasklist /FI 'IMAGENAME eq node.exe')",
+      "Bash(tasklist /FI \"PID eq 2356\")",
+      "Bash(timeout 3 node dist/index.js)",
+      "Skill(planning-with-files:planning-with-files)",
+      "Skill(planning-with-files:planning-with-files:*)"
+    ],
+    "additionalDirectories": [
+      "d:\\OneDrive\\ai-eda"
+    ]
+  }
+}

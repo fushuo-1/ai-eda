@@ -32,6 +32,11 @@ export declare class MCPServerWebSocket {
      */
     private sendPong;
     /**
+     * Handle shutdown request from new process
+     * Gracefully close all connections and exit
+     */
+    private handleShutdown;
+    /**
      * Send request to extension and wait for response
      * @param method - Method name to call
      * @param params - Method parameters
@@ -40,13 +45,17 @@ export declare class MCPServerWebSocket {
      */
     sendRequest(method: string, params: any, timeout?: number): Promise<any>;
     /**
+     * Clean up disconnected clients
+     */
+    private cleanupDisconnectedClients;
+    /**
      * Check if there are connected clients
      */
     hasConnectedClients(): boolean;
     /**
      * Start health check to clean up disconnected clients
+     * 已禁用：调试断连问题
      */
-    private startHealthCheck;
     /**
      * Generate unique client ID
      */

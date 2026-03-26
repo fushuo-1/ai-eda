@@ -5,7 +5,7 @@
  */
 import { WebSocketServer as WSServer } from 'ws';
 import { RequestManager } from './utils/request-manager.js';
-import { DEFAULT_REQUEST_TIMEOUT, HEALTH_CHECK_INTERVAL, ErrorCode } from './constants.js';
+import { DEFAULT_REQUEST_TIMEOUT, /* HEALTH_CHECK_INTERVAL, */ ErrorCode } from './constants.js';
 import { MCPError } from './services/error-handler.js';
 export class MCPServerWebSocket {
     wss;
@@ -35,16 +35,18 @@ export class MCPServerWebSocket {
         this.timeout = timeout;
         this.wss = new WSServer({ port });
         this.setupServer();
-        this.startHealthCheck();
+        // 心跳检测已禁用，调试断连问题
+        // this.startHealthCheck();
     }
     setupServer() {
-        this.wss.on('connection', (ws) => {
+        this.wss.on('connection', (ws, req) => {
             const clientId = this.generateClientId();
             this.clients.set(clientId, ws);
-            console.error(`[MCP WS] Extension connected (${clientId})`);
+            const clientIp = req.socket.remoteAddress || 'unknown';
+            console.error(`[MCP WS] ✅ Extension connected (${clientId}) from ${clientIp}, total clients: ${this.clients.size}`);
             ws.on('message', (data) => this.handleMessage(clientId, data));
-            ws.on('close', () => {
-                console.error(`[MCP WS] Extension disconnected (${clientId})`);
+            ws.on('close', (code, reason) => {
+                console.error(`[MCP WS] ❌ Extension disconnected (${clientId}), code: ${code}, reason: ${reason.toString() || 'none'}`);
                 this.clients.delete(clientId);
                 // Reject all waiting requests
                 for (const [id, { reject }] of this.pendingRequests) {
@@ -54,8 +56,18 @@ export class MCPServerWebSocket {
                 this.pendingRequests.clear();
             });
             ws.on('error', (error) => {
-                console.error('[MCP WS] WebSocket error:', error);
+                console.error('[MCP WS] ⚠️ WebSocket error:', error.message);
             });
+            // 监听 ping/pong
+            ws.on('ping', () => {
+                console.error(`[MCP WS] Ping received from ${clientId}`);
+            });
+            ws.on('pong', () => {
+                console.error(`[MCP WS] Pong received from ${clientId}`);
+            });
+        });
+        this.wss.on('error', (error) => {
+            console.error('[MCP WS] Server error:', error);
         });
         console.error(`[MCP WS] Server listening on ws://localhost:${this.wss.options.port}`);
     }
@@ -66,6 +78,12 @@ export class MCPServerWebSocket {
             if ('method' in message) {
                 const request = message;
                 const { id, method, params } = request;
+                // 处理 shutdown 请求 - 新进程通知旧进程关闭
+                if (method === 'shutdown') {
+                    console.error(`[MCP WS] Received shutdown request from new process`);
+                    this.handleShutdown(clientId, id, params);
+                    return;
+                }
                 // 处理心跳ping消息
                 if (method === 'ping' || id === 'heartbeat_ping') {
                     this.sendPong(clientId, id, params);
@@ -120,6 +138,29 @@ export class MCPServerWebSocket {
         console.error(`[MCP WS] 💓 Ping received from ${clientId} at ${timeStr}, latency: ${latency}ms`);
     }
     /**
+     * Handle shutdown request from new process
+     * Gracefully close all connections and exit
+     */
+    handleShutdown(clientId, requestId, _params) {
+        console.error('[MCP WS] 🔄 Graceful shutdown initiated by new process...');
+        // 发送响应确认
+        const client = this.clients.get(clientId);
+        if (client && client.readyState === 1) {
+            const response = {
+                id: requestId,
+                result: { status: 'shutting_down', message: 'Graceful shutdown initiated' }
+            };
+            client.send(JSON.stringify(response));
+        }
+        // 延迟退出，给响应发送时间
+        setTimeout(() => {
+            console.error('[MCP WS] 🔌 Closing all connections...');
+            this.close();
+            console.error('[MCP WS] 👋 Exiting gracefully...');
+            process.exit(0);
+        }, 100);
+    }
+    /**
      * Send request to extension and wait for response
      * @param method - Method name to call
      * @param params - Method parameters
@@ -127,11 +168,24 @@ export class MCPServerWebSocket {
      * @returns Promise that resolves with the result
      */
     async sendRequest(method, params, timeout) {
+        // 清理已断开的客户端
+        this.cleanupDisconnectedClients();
         if (this.clients.size === 0) {
             throw new MCPError(ErrorCode.EXTENSION_DISCONNECTED, 'No JLCEDA extension connected', 'Please:\n1. Open JLCEDA Pro\n2. Import the WebSocket bridge extension\n3. Open a PCB or schematic document');
         }
         return new Promise((resolve, reject) => {
-            const client = this.clients.values().next().value;
+            // 获取第一个可用的、状态正常的客户端
+            let client = null;
+            for (const ws of this.clients.values()) {
+                if (ws.readyState === 1) { // 1 = OPEN
+                    client = ws;
+                    break;
+                }
+            }
+            if (!client) {
+                reject(new MCPError(ErrorCode.EXTENSION_DISCONNECTED, 'No active WebSocket connection', 'Extension may be reconnecting. Please try again.'));
+                return;
+            }
             const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
             const request = { id, method, params };
             const requestTimeout = timeout || this.timeout;
@@ -152,6 +206,17 @@ export class MCPServerWebSocket {
         });
     }
     /**
+     * Clean up disconnected clients
+     */
+    cleanupDisconnectedClients() {
+        for (const [id, client] of this.clients) {
+            if (client.readyState !== 1) { // 1 = OPEN
+                console.error(`[MCP WS] Cleaning up disconnected client (${id}), readyState: ${client.readyState}`);
+                this.clients.delete(id);
+            }
+        }
+    }
+    /**
      * Check if there are connected clients
      */
     hasConnectedClients() {
@@ -159,17 +224,18 @@ export class MCPServerWebSocket {
     }
     /**
      * Start health check to clean up disconnected clients
+     * 已禁用：调试断连问题
      */
-    startHealthCheck() {
-        this.healthCheckTimer = setInterval(() => {
-            for (const [id, client] of this.clients) {
-                if (client.readyState !== 1) { // 1 = OPEN
-                    console.error(`[MCP WS] Cleaning up disconnected client (${id})`);
-                    this.clients.delete(id);
-                }
-            }
-        }, HEALTH_CHECK_INTERVAL);
-    }
+    // private startHealthCheck(): void {
+    //   this.healthCheckTimer = setInterval(() => {
+    //     for (const [id, client] of this.clients) {
+    //       if (client.readyState !== 1) { // 1 = OPEN
+    //         console.error(`[MCP WS] Cleaning up disconnected client (${id})`);
+    //         this.clients.delete(id);
+    //       }
+    //     }
+    //   }, HEALTH_CHECK_INTERVAL);
+    // }
     /**
      * Generate unique client ID
      */
